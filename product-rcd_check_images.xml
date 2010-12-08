@@ -1,0 +1,278 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+
+<product productid="rcd_check_images" active="1">
+	<title><![CDATA[Check [IMG] tags]]></title>
+	<description>Check images and covert to urls if needed</description>
+	<version>0.1</version>
+	<url><![CDATA[http://www.vbulletin.org/forum/misc.php?do=producthelp&pid=rcd_check_images]]></url>
+	<versioncheckurl><![CDATA[http://www.vbulletin.org/forum/misc.php?do=productcheck&pid=rcd_check_images]]></versioncheckurl>
+	<apm_releasedate>0</apm_releasedate>
+	<apm_author />
+	<apm_relatedurl />
+	<apm_extrainfo />
+	<apm_extraedit />
+	<dependencies>
+	</dependencies>
+	<codes>
+		<code version="0.1">
+			<installcode><![CDATA[$db->query("CREATE TABLE `". TABLE_PREFIX ."rcd_imagequeue` (
+  `imagequeueid` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `url` varchar(255) NOT NULL,
+  `size` varchar(40) NOT NULL,
+  `contentid`  int(10) unsigned NOT NULL,
+  `contenttypeid` int(10) unsigned NOT NULL ,
+  `http_code` int(10) unsigned NOT NULL,
+  `var_dump` text NOT NULL,
+  `userid` int(10) unsigned NOT NULL,
+    PRIMARY KEY (`imagequeueid`)
+    ) AUTO_INCREMENT=1"
+);]]></installcode>
+			<uninstallcode><![CDATA[$db->query("DROP TABLE `". TABLE_PREFIX ."rcd_imagequeue`");]]></uninstallcode>
+		</code>
+	</codes>
+	<templates>
+	</templates>
+	<stylevardfns>
+	</stylevardfns>
+	<stylevars>
+	</stylevars>
+	<plugins>
+		<plugin active="1" executionorder="5">
+			<title>Write imagequeue into database if needed</title>
+			<hookname>blog_fpdata_postsave</hookname>
+			<phpcode><![CDATA[if (function_exists('ci_write_img_log'))
+{
+    $blogtextid = intval($this->fetch_field($this->table == 'blog_text' ? 'blogtextid' : 'firstblogtextid'));
+    ci_write_img_log($blogtextid, 'vBBlog_BlogEntry');
+}]]></phpcode>
+		</plugin>
+		<plugin active="1" executionorder="5">
+			<title>Fix images on new blog</title>
+			<hookname>blog_fpdata_presave</hookname>
+			<phpcode><![CDATA[if (function_exists('ci_fix_images_in_msg') AND THIS_SCRIPT == 'blog_post')
+{
+    ci_fix_images_in_msg($this->blog_text['pagetext']);  
+}]]></phpcode>
+		</plugin>
+		<plugin active="1" executionorder="5">
+			<title>Write imagequeue into database if needed</title>
+			<hookname>blog_textdata_postsave</hookname>
+			<phpcode><![CDATA[if (function_exists('ci_write_img_log'))
+{
+    ci_write_img_log($blogtextid, 'vBBlog_BlogComment');
+}]]></phpcode>
+		</plugin>
+		<plugin active="1" executionorder="5">
+			<title>Fix images on blog comment</title>
+			<hookname>blog_textdata_presave</hookname>
+			<phpcode><![CDATA[if (function_exists('ci_fix_images_in_msg'))
+{
+    ci_fix_images_in_msg($this->blog_text['pagetext']);  
+}]]></phpcode>
+		</plugin>
+		<plugin active="1" executionorder="5">
+			<title>Declare function in global namespace</title>
+			<hookname>global_bootstrap_complete</hookname>
+			<phpcode><![CDATA[if (function_exists('curl_multi_init'))
+{
+    // Returns image url headers or false, if image array was empty
+    function ci_get_url_headers($urls = array())
+    {
+        if (empty($urls) || !is_array($urls)) return false;
+        $running = null;
+        $curl = curl_multi_init();
+        
+        $curl_opts = array(
+            CURLOPT_HEADER => 1,
+            CURLOPT_NOBODY => true,
+            CURLOPT_FOLLOWLOCATION => 1,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_CONNECTTIMEOUT => 3,
+            CURLOPT_MAXREDIRS => 2
+        );
+        
+        foreach ($urls as $key => $url)
+        {
+            $conn[$key] = curl_init($url);
+            curl_setopt_array($conn[$key], $curl_opts);
+            curl_multi_add_handle($curl,$conn[$key]);       
+        }
+
+        do 
+        {
+            curl_multi_exec($curl, $running);
+            usleep(50);
+        } 
+        while ($running > 0);
+
+        // Get headers of each url
+        foreach ($conn as $id => $connection)
+        {
+            $result[$id] = curl_getinfo($connection);
+            //$curl_errno = curl_errno($connection);
+            curl_multi_remove_handle($curl, $connection);
+        }
+        
+        curl_multi_close($curl);
+        return $result;
+    }
+
+    function ci_fix_images_in_msg(&$message)
+    {
+        global $vbulletin;
+        global $vbphrase;
+        $ci_img = null;
+        preg_match_all('#\[img\]\s*(https?://([^*\r\n]+|[a-z0-9/\\._\- !]+))\[/img\]#iUe', $message, $ci_img);
+
+        if ($ci_img)
+        {
+            $ci_checked_img = ci_get_url_headers($ci_img[1]);
+            if (isset($ci_checked_img) AND !empty($ci_checked_img) AND is_array($ci_checked_img))
+            {
+                // declare global array to pass images we are fixing (wrapping in URL)
+                global $ci_image_queue;
+                $ci_image_queue = null;
+            
+                foreach ($ci_checked_img as $key => $image)
+                {
+                    $tmp_size = 0;
+                    // If we had bad respose or it's not image or if image exceeds size - change to url
+                    if ($image['http_code'] != 200 OR
+                        strpos($image['content_type'], 'image/') !== 0 OR
+                        ($tmp_size = intval($image['download_content_length'])) > ($vbulletin->options['ci_filesize'] * 1024))
+                    {
+                        $ci_url = '[URL]' . $ci_img[1][$key] . '[/URL]';
+                        $ci_phrase = '';
+                        if ($tmp_size > 0)
+                        {
+                            $ci_phrase .= construct_phrase($vbphrase['ci_img_chk_failed'], intval($image['download_content_length']/1024));
+                        }
+                        $message = str_replace($ci_img[0][$key], $ci_url . $ci_phrase, $message);
+
+                        // adding values to log it further
+                        $ci_image_queue[] = array(
+                            'url' => $vbulletin->db->escape_string($image['url']),
+                            'http_code' => $image['http_code'],
+                            'userid' => $vbulletin->userinfo['userid'],
+                            'var_dump' => $vbulletin->db->escape_string(var_export($image,true)),
+                            'size' => $image['download_content_length']
+                        );
+                    }
+                }
+            }   
+        }
+    }
+
+    /**
+     * This is logging only function
+     */
+    function ci_write_img_log($message_id, $c_type)
+    {
+        global $ci_image_queue;
+        global $vbulletin;
+
+        // needed in AJAX case to include files, used by vB_Types
+        require_once(DIR . '/includes/class_bootstrap_framework.php');
+        vB_Bootstrap_Framework::init();
+        require_once(DIR . '/vb/types.php');
+        $c_type_id = vB_Types::instance()->getContentTypeID($c_type);
+
+        if (is_array($ci_image_queue) && !empty($ci_image_queue))
+        {
+            foreach ($ci_image_queue as $ci_img_data)
+            {
+                $ci_sql_values[] = "('" . $ci_img_data['url'] . "',
+                    " . $message_id .",
+                    " . $c_type_id . ",
+                    " . $ci_img_data['http_code'] . ",
+                    " . $ci_img_data['userid'] . ",
+                   '" . $ci_img_data['var_dump'] . "',
+                    " . $ci_img_data['size'] . ")";    
+            }
+    
+            $vbulletin->db->query_write("INSERT INTO " . TABLE_PREFIX . "rcd_imagequeue
+                        (url, contentid, contenttypeid, http_code, userid, var_dump, size)
+                            VALUES
+                            ". implode(',', $ci_sql_values));
+        }
+    }
+}]]></phpcode>
+		</plugin>
+		<plugin active="1" executionorder="5">
+			<title>Write imagequeue into database if needed</title>
+			<hookname>groupmessagedata_postsave</hookname>
+			<phpcode><![CDATA[if (function_exists('ci_write_img_log') AND $gmid)
+{
+    ci_write_img_log($gmid, 'vBForum_SocialGroupMessage');
+}]]></phpcode>
+		</plugin>
+		<plugin active="1" executionorder="5">
+			<title>Fix images on new group message</title>
+			<hookname>groupmessagedata_presave</hookname>
+			<phpcode><![CDATA[if (function_exists('ci_fix_images_in_msg') AND $this->fetch_field('pagetext') AND THIS_SCRIPT == 'group')
+{
+    $message = $this->fetch_field('pagetext');
+    ci_fix_images_in_msg($message);
+    $this->set('pagetext', $message);
+}]]></phpcode>
+		</plugin>
+		<plugin active="1" executionorder="5">
+			<title>Write imagequeue into database if needed</title>
+			<hookname>postdata_postsave</hookname>
+			<phpcode><![CDATA[if (function_exists('ci_write_img_log'))
+{
+    ci_write_img_log($postid, 'vBForum_Post');
+}]]></phpcode>
+		</plugin>
+		<plugin active="1" executionorder="5">
+			<title>Fix images on newreply</title>
+			<hookname>postdata_presave</hookname>
+			<phpcode><![CDATA[if (function_exists('ci_fix_images_in_msg') AND (THIS_SCRIPT == 'newreply' OR THIS_SCRIPT == 'editpost'))
+{
+    ci_fix_images_in_msg($this->post['pagetext']);
+}]]></phpcode>
+		</plugin>
+		<plugin active="1" executionorder="5">
+			<title>Write imagequeue into database if needed</title>
+			<hookname>threadfpdata_postsave</hookname>
+			<phpcode><![CDATA[if (function_exists('ci_write_img_log'))
+{
+    ci_write_img_log(intval($this->fetch_field('firstpostid')), 'vBForum_Post');
+}]]></phpcode>
+		</plugin>
+		<plugin active="1" executionorder="5">
+			<title>Fix images on newthread</title>
+			<hookname>threadfpdata_presave</hookname>
+			<phpcode><![CDATA[if (function_exists('ci_fix_images_in_msg'))
+{
+    ci_fix_images_in_msg($this->post['pagetext']);
+}]]></phpcode>
+		</plugin>
+	</plugins>
+	<phrases>
+		<phrasetype name="GLOBAL" fieldname="global">
+			<phrase name="ci_img_chk_failed" date="1291365167" username="admin" version=""><![CDATA[({1} Kb)]]></phrase>
+		</phrasetype>
+		<phrasetype name="vBulletin Settings" fieldname="vbsettings">
+			<phrase name="setting_ci_filesize_desc" date="1291799007" username="Vitaly" version=""><![CDATA[Set max image size (in kilobytes) for [IMG] tag. If limit exceeded, [IMG] is replaced by [URL].]]></phrase>
+			<phrase name="setting_ci_filesize_title" date="1291798570" username="admin" version="0.1"><![CDATA[[IMG] content max size]]></phrase>
+			<phrase name="settinggroup_ci_setting_group" date="1291798903" username="Vitaly" version=""><![CDATA[Check [IMG] tags]]></phrase>
+		</phrasetype>
+	</phrases>
+	<options>
+		<settinggroup name="ci_setting_group" displayorder="65535">
+			<setting varname="ci_filesize" displayorder="10">
+				<datatype>integer</datatype>
+				<defaultvalue>200</defaultvalue>
+			</setting>
+		</settinggroup>
+	</options>
+	<helptopics>
+	</helptopics>
+	<cronentries>
+	</cronentries>
+	<faqentries>
+	</faqentries>
+	<templateedits>
+	</templateedits>
+</product>
