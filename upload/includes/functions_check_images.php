@@ -253,11 +253,11 @@ if (function_exists('curl_multi_init'))
     {
         global $vbphrase;
 
-        $ci_phrase = ' ';
+        $ci_phrase = '';
 
         if ($size > 0)
         {
-            $ci_phrase .= construct_phrase($vbphrase['ci_img_chk_failed'], intval($size / 1024));
+            $ci_phrase .= ' ' . construct_phrase($vbphrase['ci_img_chk_failed'], intval($size / 1024));
         }
 
         $to_replace = '[IMG]' . $url . '[/IMG]';
