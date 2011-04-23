@@ -80,7 +80,12 @@ if (is_array($ci_urls_status))
     // Now we have status and content size on every url
     foreach ($ci_urls_status as $key => $url_data)
     {
-        if ($url_data['status'] == 'REPLACE')
+        $ci_url_check_attempts = $ci_urls_data[$key]['attempts'] + 1;
+
+        // If the status PROCESSING, but the number of attempts is over - set FAILED
+        $ci_url_queue_status = ($url_data['status'] == 'PROCESSING' AND $ci_url_check_attempts >= CI_CHECK_COUNT) ? 'FAILED' : $url_data['status'] ;
+
+        if ( $ci_url_queue_status == 'REPLACE' OR $ci_url_queue_status == 'FAILED' )
         {
             // Get classname from contenttypeid
             $ci_content_type = $ci_content_types->getContentTypeClass($ci_urls_data[$key]['contenttypeid']);
@@ -114,10 +119,6 @@ if (is_array($ci_urls_status))
                     break;
             }
         }
-        $ci_url_check_attempts = $ci_urls_data[$key]['attempts'] + 1;
-
-        // If the status PROCESSING, but the number of attempts is over - set FAILED
-        $ci_url_queue_status = ($url_data['status'] == 'PROCESSING' AND $ci_url_check_attempts >= CI_CHECK_COUNT) ? 'FAILED' : $url_data['status'] ;
 
         $vbulletin->db->query_write(" UPDATE " . TABLE_PREFIX . "rcd_imagequeue
                            SET   attempts = " . $ci_url_check_attempts . ",
