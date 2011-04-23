@@ -253,7 +253,7 @@ if (function_exists('curl_multi_init'))
     {
         global $vbphrase;
 
-        $ci_phrase = '';
+        $ci_phrase = ' ';
 
         if ($size > 0)
         {
@@ -261,7 +261,7 @@ if (function_exists('curl_multi_init'))
         }
 
         $to_replace = '[IMG]' . $url . '[/IMG]';
-        $replacement = '[URL]' . $url . '[/URL]' . ' ' . $ci_phrase;
+        $replacement = '[URL]' . $url . '[/URL]' . $ci_phrase;
 
         return str_ireplace($to_replace, $replacement, $message);
     }
