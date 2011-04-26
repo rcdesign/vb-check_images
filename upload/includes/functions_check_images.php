@@ -40,7 +40,9 @@ if (function_exists('curl_multi_init'))
                 CURLOPT_FOLLOWLOCATION => 1,
                 CURLOPT_RETURNTRANSFER => true,
                 CURLOPT_CONNECTTIMEOUT => 3,
-                CURLOPT_MAXREDIRS => 2
+
+                // vkontakte.ru can have 4 redirects
+                CURLOPT_MAXREDIRS => 6
         );
 
         $pool  = curl_multi_init();
