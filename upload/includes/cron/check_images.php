@@ -40,7 +40,7 @@ $ci_content_types = vB_Types::instance();
 // first of all, purge all obsolete records
 $vbulletin->db->query_write("
   DELETE FROM " . TABLE_PREFIX . "rcd_imagequeue
-   WHERE nextcheck < " . (TIMENOW - CI_MAX_RECORD_AGE * 24 * 3600) . "
+   WHERE `nextcheck` < " . (TIMENOW - CI_MAX_RECORD_AGE * 24 * 3600) . "
 ");
 
 /*
@@ -57,7 +57,6 @@ $ci_query_resource = $vbulletin->db->query("
     FROM " . TABLE_PREFIX . "rcd_imagequeue
    WHERE status = 'PROCESSING'
      AND nextcheck < " . TIMENOW . "
-     AND attempts < " . CI_CHECK_COUNT . "
 ");
 
 // Queue URLs to check
