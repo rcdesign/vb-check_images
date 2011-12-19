@@ -43,6 +43,7 @@ if (function_exists('curl_multi_init'))
                 CURLOPT_FOLLOWLOCATION => 1,
                 CURLOPT_RETURNTRANSFER => true,
                 CURLOPT_CONNECTTIMEOUT => 3,
+                CURLOPT_TIMEOUT => 10,
 
                 // vkontakte.ru can have 4 redirects
                 CURLOPT_MAXREDIRS => 6
@@ -88,9 +89,8 @@ if (function_exists('curl_multi_init'))
             }
 
             // Run all requests in queue
-            $running = null;
-            do { $status = curl_multi_exec($pool, $running); }
-            while ($running || $status === CURLM_CALL_MULTI_PERFORM);
+            curl_multi_exec($pool, $running = null);
+            usleep(12000); // 12 secs
 
             // If we have completed requests
             while ($done = curl_multi_info_read($pool))
