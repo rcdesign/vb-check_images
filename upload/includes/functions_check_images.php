@@ -151,6 +151,18 @@ if (function_exists('curl_multi_init'))
         // If message contains IMG tags
         if (preg_match_all('#\[img\]\s*(https?://([^*\r\n]+|[a-z0-9/\\._\- !]+))\[/img\]#iUe', $message, $ci_img_tags))
         {
+            // Filter ut ll data-uris
+            foreach ($ci_img_tags[1] as $idx => $url) {
+                if (preg_match('/;base64,[A-Za-z0-9+/]{2}[A-Za-z0-9+/=]{2,}$/', $url)) {
+                    // got data uri - remove whole string
+                    $message = str_ireplace($ci_img_tags[0][$idx], '', $message);
+                    // and remove it from matching groups
+                    foreach($ci_img_tags as $i => $arr) {
+                        unset($ci_img_tags[$i][$idx]);
+                    }
+                }
+            }
+          
             // Get status of each url
             $ci_urls_status = ci_check_urls($ci_img_tags[1]);
             foreach ($ci_urls_status as $key => $url_data)
@@ -168,6 +180,7 @@ if (function_exists('curl_multi_init'))
                 }
             }
         }
+
         return $ci_postponed_urls;
     }
 
