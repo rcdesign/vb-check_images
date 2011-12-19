@@ -88,8 +88,9 @@ if (function_exists('curl_multi_init'))
             }
 
             // Run all requests in queue
-            curl_multi_exec($pool, $running);
-            usleep(50000);
+            $running = null;
+            do { $status = curl_multi_exec($pool, $running); }
+            while ($running || $status === CURLM_CALL_MULTI_PERFORM);
 
             // If we have completed requests
             while ($done = curl_multi_info_read($pool))
