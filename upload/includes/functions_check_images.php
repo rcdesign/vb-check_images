@@ -62,10 +62,7 @@ if (function_exists('curl_multi_init'))
         // Connection pool for curl_multi
         $connections = array();
 
-        // Count URLs to check
-        $urls_count = count($urls);
-
-        while ($urls_count > 0)
+        while (0 < count($urls))
         {
             // Add a connection to CURL until they reach a limit connections
             foreach ($urls as $key => $url)
@@ -100,9 +97,6 @@ if (function_exists('curl_multi_init'))
                 // Decrease domain counter
                 $domain = parse_url($info['url'], PHP_URL_HOST);
                 $domain_counter[$domain]--;
-
-                // Decrease url counter
-                $urls_count--;
             }
         }
 
