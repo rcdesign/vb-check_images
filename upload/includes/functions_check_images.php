@@ -10,6 +10,9 @@ if (function_exists('curl_multi_init'))
     // The time interval for checking URL in minutes, 1 means the interval is determined by cron job
     define("CI_CHECK_INTERVAL", 1);
 
+    // Max days to keep records in the DB
+    define("CI_MAX_RECORD_AGE", 3);
+
     // Global array used to pass URLs from presave to postsave hook
     $ci_postponed_urls = array();
 
@@ -128,6 +131,7 @@ if (function_exists('curl_multi_init'))
 
             $result[$key] = array('status' => $status, 'size' => intval($http_header['download_content_length']));
         }
+
         curl_multi_close($pool);
         return $result;
     }

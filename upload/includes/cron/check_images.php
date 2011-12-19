@@ -37,6 +37,12 @@ vB_Bootstrap_Framework::init();
 
 $ci_content_types = vB_Types::instance();
 
+// first of all, purge all obsolete records
+$vbulletin->db->query_write("
+  DELETE FROM " . TABLE_PREFIX . "rcd_imagequeue
+   WHERE nextcheck < " . (TIMENOW - CI_MAX_RECORD_AGE * 24 * 3600) . "
+");
+
 /*
 * get URLs that we need to check (status = PROCESSING and nextcheck < now)
 *
@@ -47,21 +53,21 @@ $ci_content_types = vB_Types::instance();
 *  FAILED - number of attempts exceeded, not be checked anymore
 */
 $ci_query_resource = $vbulletin->db->query("
-    SELECT imagequeueid,
-           url,
-           contentid,
-           contenttypeid,
-           attempts
+  SELECT imagequeueid, url, contentid, contenttypeid, attempts
     FROM " . TABLE_PREFIX . "rcd_imagequeue
-    WHERE status = 'PROCESSING' AND
-          nextcheck < " . TIMENOW . "
-    ");
+   WHERE status = 'PROCESSING'
+     AND nextcheck < " . TIMENOW . "
+     AND attempts < " . CI_CHECK_COUNT . "
+");
 
 // Queue URLs to check
 $ci_urls = array();
 
 // Full URL data (to update message)
 $ci_urls_data = array();
+
+// Next check timestamp
+$ci_next_check = TIMENOW + CI_CHECK_INTERVAL * 60;
 
 // Fetch queued URL info
 while ($ci_data = $vbulletin->db->fetch_array($ci_query_resource))
@@ -83,9 +89,11 @@ if (is_array($ci_urls_status))
         $ci_url_check_attempts = $ci_urls_data[$key]['attempts'] + 1;
 
         // If the status PROCESSING, but the number of attempts is over - set FAILED
-        $ci_url_queue_status = ($url_data['status'] == 'PROCESSING' AND $ci_url_check_attempts >= CI_CHECK_COUNT) ? 'FAILED' : $url_data['status'] ;
+        $ci_url_queue_status = ('PROCESSING' === $ci_url_queue_status && $ci_url_check_attempts >= CI_CHECK_COUNT)
+          ? 'FAILED'
+          : $url_data['status'];
 
-        if ( $ci_url_queue_status == 'REPLACE' OR $ci_url_queue_status == 'FAILED' )
+        if ( $ci_url_queue_status == 'REPLACE' || $ci_url_queue_status == 'FAILED' )
         {
             // Get classname from contenttypeid
             $ci_content_type = $ci_content_types->getContentTypeClass($ci_urls_data[$key]['contenttypeid']);
@@ -120,12 +128,13 @@ if (is_array($ci_urls_status))
             }
         }
 
-        $vbulletin->db->query_write(" UPDATE " . TABLE_PREFIX . "rcd_imagequeue
-                           SET   attempts = " . $ci_url_check_attempts . ",
-                                 nextcheck = " . (TIMENOW + CI_CHECK_INTERVAL * 60) . ",
-                                 status = '" . $ci_url_queue_status . "'
-                           WHERE imagequeueid = " . $key . "
-                        ");
+        $vbulletin->db->query_write("
+          UPDATE " . TABLE_PREFIX . "rcd_imagequeue
+             SET attempts = {$ci_url_check_attempts},
+                 nextcheck = {$ci_next_check},
+                 status = '{$ci_url_queue_status}'
+           WHERE imagequeueid = {$key}
+       ");
     }
 }
 
