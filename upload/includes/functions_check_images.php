@@ -10,6 +10,9 @@ if (function_exists('curl_multi_init'))
     // The time interval for checking URL in minutes, 1 means the interval is determined by cron job
     define("CI_CHECK_INTERVAL", 1);
 
+    // Max days to keep records in the DB
+    define("CI_MAX_RECORD_AGE", 3);
+
     // Global array used to pass URLs from presave to postsave hook
     $ci_postponed_urls = array();
 
@@ -40,6 +43,7 @@ if (function_exists('curl_multi_init'))
                 CURLOPT_FOLLOWLOCATION => 1,
                 CURLOPT_RETURNTRANSFER => true,
                 CURLOPT_CONNECTTIMEOUT => 3,
+                CURLOPT_TIMEOUT => 10,
 
                 // vkontakte.ru can have 4 redirects
                 CURLOPT_MAXREDIRS => 6
@@ -85,8 +89,8 @@ if (function_exists('curl_multi_init'))
             }
 
             // Run all requests in queue
-            curl_multi_exec($pool, $running);
-            usleep(50000);
+            curl_multi_exec($pool, $running = null);
+            usleep(12000); // 12 secs
 
             // If we have completed requests
             while ($done = curl_multi_info_read($pool))
@@ -128,6 +132,7 @@ if (function_exists('curl_multi_init'))
 
             $result[$key] = array('status' => $status, 'size' => intval($http_header['download_content_length']));
         }
+
         curl_multi_close($pool);
         return $result;
     }
@@ -146,6 +151,18 @@ if (function_exists('curl_multi_init'))
         // If message contains IMG tags
         if (preg_match_all('#\[img\]\s*(https?://([^*\r\n]+|[a-z0-9/\\._\- !]+))\[/img\]#iUe', $message, $ci_img_tags))
         {
+            // Filter ut ll data-uris
+            foreach ($ci_img_tags[1] as $idx => $url) {
+                if (preg_match('/;base64,[A-Za-z0-9+/]{2}[A-Za-z0-9+/=]{2,}$/', $url)) {
+                    // got data uri - remove whole string
+                    $message = str_ireplace($ci_img_tags[0][$idx], '', $message);
+                    // and remove it from matching groups
+                    foreach($ci_img_tags as $i => $arr) {
+                        unset($ci_img_tags[$i][$idx]);
+                    }
+                }
+            }
+          
             // Get status of each url
             $ci_urls_status = ci_check_urls($ci_img_tags[1]);
             foreach ($ci_urls_status as $key => $url_data)
@@ -163,6 +180,7 @@ if (function_exists('curl_multi_init'))
                 }
             }
         }
+
         return $ci_postponed_urls;
     }
 
